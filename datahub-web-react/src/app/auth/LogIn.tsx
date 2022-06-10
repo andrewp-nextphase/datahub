@@ -118,7 +118,7 @@ export const LogIn: React.VFC<LogInProps> = () => {
                                         className={styles.login_button}
                                         disabled={!formIsComplete}
                                     >
-                                        Sign In
+                                        Log In~
                                     </Button>
                                 );
                             }}

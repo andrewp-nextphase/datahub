@@ -95,14 +95,14 @@ export const LogIn: React.VFC<LogInProps> = () => {
                         <Form.Item
                             name="username"
                             // eslint-disable-next-line jsx-a11y/label-has-associated-control
-                            label={<label style={{ color: 'white' }}>Username</label>}
+                            label={<label style={{ color: 'white' }}>USR</label>}
                         >
                             <FormInput prefix={<UserOutlined />} data-testid="username" />
                         </Form.Item>
                         <Form.Item
                             name="password"
                             // eslint-disable-next-line jsx-a11y/label-has-associated-control
-                            label={<label style={{ color: 'white' }}>Password</label>}
+                            label={<label style={{ color: 'white' }}>PASS</label>}
                         >
                             <FormInput prefix={<LockOutlined />} type="password" data-testid="password" />
                         </Form.Item>

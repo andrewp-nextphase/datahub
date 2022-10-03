@@ -1,32 +1,44 @@
 import re
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import auto
 from typing import IO, Any, ClassVar, Dict, List, Optional, Pattern, cast
 
-from pydantic import BaseModel, Extra, validator
+from cached_property import cached_property
+from pydantic import BaseModel, Extra
 from pydantic.fields import Field
+
+from datahub.configuration._config_enum import ConfigEnum
 
 
 class ConfigModel(BaseModel):
     class Config:
         extra = Extra.forbid
+        underscore_attrs_are_private = True
+        keep_untouched = (
+            cached_property,
+        )  # needed to allow cached_property to work. See https://github.com/samuelcolvin/pydantic/issues/1241 for more info.
 
 
-class TransformerSemantics(Enum):
+class PermissiveConfigModel(ConfigModel):
+    # A permissive config model that allows extra fields.
+    # This is useful for cases where we want to strongly type certain fields,
+    # but still allow the user to pass in arbitrary fields that we don't care about.
+    # It is usually used for argument bags that are passed through to third-party libraries.
+
+    class Config:
+        extra = Extra.allow
+
+
+class TransformerSemantics(ConfigEnum):
     """Describes semantics for aspect changes"""
 
-    OVERWRITE = "OVERWRITE"  # Apply changes blindly
-    PATCH = "PATCH"  # Only apply differences from what exists already on the server
+    OVERWRITE = auto()  # Apply changes blindly
+    PATCH = auto()  # Only apply differences from what exists already on the server
 
 
 class TransformerSemanticsConfigModel(ConfigModel):
     semantics: TransformerSemantics = TransformerSemantics.OVERWRITE
-
-    @validator("semantics", pre=True)
-    def ensure_semantics_is_upper_case(cls, v: str) -> str:
-        if isinstance(v, str):
-            return v.upper()
-        return v
+    replace_existing: bool = False
 
 
 class DynamicTypedConfig(ConfigModel):
@@ -100,7 +112,7 @@ class OauthConfiguration(ConfigModel):
     scopes: Optional[List[str]] = Field(
         description="scopes required to connect to snowflake"
     )
-    use_certificate: Optional[str] = Field(
+    use_certificate: bool = Field(
         description="Do you want to use certificate and private key to authenticate using oauth",
         default=False,
     )
@@ -173,6 +185,9 @@ class AllowDenyPattern(ConfigModel):
         """Return the list of allowed strings as a list, after taking into account deny patterns, if possible"""
         assert self.is_fully_specified_allow_list()
         return [a for a in self.allow if self.allowed(a)]
+
+    def __eq__(self, other):  # type: ignore
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
 
 
 class KeyValuePattern(ConfigModel):

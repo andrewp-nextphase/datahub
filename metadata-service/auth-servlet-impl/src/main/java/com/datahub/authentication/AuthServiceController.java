@@ -1,11 +1,13 @@
 package com.datahub.authentication;
 
+import com.datahub.authentication.invite.InviteTokenService;
 import com.datahub.authentication.token.StatelessTokenService;
 import com.datahub.authentication.token.TokenType;
 import com.datahub.authentication.user.NativeUserService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.linkedin.common.urn.Urn;
 import com.linkedin.gms.factory.config.ConfigurationProvider;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
@@ -48,6 +50,9 @@ public class AuthServiceController {
 
   @Inject
   NativeUserService _nativeUserService;
+
+  @Inject
+  InviteTokenService _inviteTokenService;
 
   /**
    * Generates a JWT access token for as user UI session, provided a unique "user id" to generate the token for inside a JSON
@@ -165,11 +170,18 @@ public class AuthServiceController {
     String titleString = title.asText();
     String passwordString = password.asText();
     String inviteTokenString = inviteToken.asText();
-    log.debug(String.format("Attempting to create credentials for native user %s", userUrnString));
+    Authentication auth = AuthenticationContext.getAuthentication();
+    log.debug(String.format("Attempting to create native user %s", userUrnString));
     return CompletableFuture.supplyAsync(() -> {
       try {
+        Urn inviteTokenUrn = _inviteTokenService.getInviteTokenUrn(inviteTokenString);
+        if (!_inviteTokenService.isInviteTokenValid(inviteTokenUrn, auth)) {
+          log.error(String.format("Invalid invite token %s", inviteTokenString));
+          return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+
         _nativeUserService.createNativeUser(userUrnString, fullNameString, emailString, titleString, passwordString,
-            inviteTokenString, AuthenticationContext.getAuthentication());
+            auth);
         String response = buildSignUpResponse();
         return new ResponseEntity<>(response, HttpStatus.OK);
       } catch (Exception e) {
@@ -225,11 +237,12 @@ public class AuthServiceController {
     String userUrnString = userUrn.asText();
     String passwordString = password.asText();
     String resetTokenString = resetToken.asText();
+    Authentication auth = AuthenticationContext.getAuthentication();
     log.debug(String.format("Attempting to reset credentials for native user %s", userUrnString));
     return CompletableFuture.supplyAsync(() -> {
       try {
         _nativeUserService.resetCorpUserCredentials(userUrnString, passwordString, resetTokenString,
-            AuthenticationContext.getAuthentication());
+            auth);
         String response = buildResetNativeUserCredentialsResponse();
         return new ResponseEntity<>(response, HttpStatus.OK);
       } catch (Exception e) {

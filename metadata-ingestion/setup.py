@@ -35,10 +35,11 @@ framework_common = {
     "entrypoints",
     "docker",
     "expandvars>=0.6.5",
-    "avro-gen3==0.7.4",
+    "avro-gen3==0.7.6",
+    # "avro-gen3 @ git+https://github.com/acryldata/avro_gen@master#egg=avro-gen3",
     "avro>=1.10.2,<1.11",
     "python-dateutil>=2.8.0",
-    "stackprinter",
+    "stackprinter>=0.2.6",
     "tabulate",
     "progressbar2",
     "termcolor>=1.0.0",
@@ -55,6 +56,9 @@ framework_common = {
     "humanfriendly",
     "packaging",
     "aiohttp<4",
+    "cached_property",
+    "ijson",
+    "click-spinner",
 }
 
 kafka_common = {
@@ -107,7 +111,7 @@ sql_common = {
     # Required for all SQL sources.
     "sqlalchemy==1.3.24",
     # Required for SQL profiling.
-    "great-expectations>=0.15.12",
+    "great-expectations>=0.15.12, <0.15.23",
     # GE added handling for higher version of jinja2
     # https://github.com/great-expectations/great_expectations/pull/5382/files
     # datahub does not depend on traitlets directly but great expectations does.
@@ -131,23 +135,22 @@ path_spec_common = {
 
 looker_common = {
     # Looker Python SDK
-    "looker-sdk==22.2.1"
+    "looker-sdk==22.2.1",
 }
 
 bigquery_common = {
+    "google-api-python-client",
     # Google cloud logging library
     "google-cloud-logging<3.1.2",
     "google-cloud-bigquery",
     "more-itertools>=8.12.0",
-    # we do not use protobuf directly but newer version caused bigquery connector to fail
-    "protobuf<=3.20.1",
 }
 
 redshift_common = {
     "sqlalchemy-redshift",
     "psycopg2-binary",
     "GeoAlchemy2",
-    "sqllineage==1.3.5",
+    "sqllineage==1.3.6",
     *path_spec_common,
 }
 
@@ -213,15 +216,18 @@ plugins: Dict[str, Set[str]] = {
         "gql>=3.3.0",
         "gql[requests]>=3.3.0",
     },
-    "great-expectations": sql_common | {"sqllineage==1.3.5"},
+    "great-expectations": sql_common | {"sqllineage==1.3.6"},
     # Source plugins
     # PyAthena is pinned with exact version because we use private method in PyAthena
     "athena": sql_common | {"PyAthena[SQLAlchemy]==2.4.1"},
     "azure-ad": set(),
     "bigquery": sql_common
     | bigquery_common
-    | {"sqlalchemy-bigquery>=1.4.1", "sqllineage==1.3.5", "sqlparse"},
+    | {"sqlalchemy-bigquery>=1.4.1", "sqllineage==1.3.6", "sqlparse"},
     "bigquery-usage": bigquery_common | usage_common | {"cachetools"},
+    "bigquery-beta": sql_common
+    | bigquery_common
+    | {"sqllineage==1.3.6", "sql_metadata"},
     "clickhouse": sql_common | {"clickhouse-sqlalchemy==0.1.8"},
     "clickhouse-usage": sql_common
     | usage_common
@@ -231,7 +237,7 @@ plugins: Dict[str, Set[str]] = {
     "datahub-lineage-file": set(),
     "datahub-business-glossary": set(),
     "delta-lake": {*data_lake_profiling, *delta_lake},
-    "dbt": {"requests", "cached_property"} | aws_common,
+    "dbt": {"requests"} | aws_common,
     "druid": sql_common | {"pydruid>=0.6.2"},
     # Starting with 7.14.0 python client is checking if it is connected to elasticsearch client. If its not it throws
     # UnsupportedProductError
@@ -253,19 +259,27 @@ plugins: Dict[str, Set[str]] = {
         # - 0.6.11 adds support for table comments and column comments,
         #   and also releases HTTP and HTTPS transport schemes
         # - 0.6.12 adds support for Spark Thrift Server
-        "acryl-pyhive[hive]>=0.6.13"
+        "acryl-pyhive[hive]>=0.6.13",
+        "databricks-dbapi",
     },
     "iceberg": iceberg_common,
     "kafka": {*kafka_common, *kafka_protobuf},
     "kafka-connect": sql_common | {"requests", "JPype1"},
     "ldap": {"python-ldap>=2.4"},
     "looker": looker_common,
-    # lkml>=1.1.2 is required to support the sql_preamble expression in LookML
     "lookml": looker_common
-    | {"lkml>=1.1.2", "sql-metadata==2.2.2", "sqllineage==1.3.5"},
-    "metabase": {"requests", "sqllineage==1.3.5"},
-    "mode": {"requests", "sqllineage==1.3.5", "tenacity>=8.0.1"},
-    "mongodb": {"pymongo>=3.11", "packaging"},
+    | {
+        # This version of lkml contains a fix for parsing lists in
+        # LookML files with spaces between an item and the following comma.
+        # See https://github.com/joshtemple/lkml/issues/73.
+        "lkml>=1.3.0b5",
+        "sql-metadata==2.2.2",
+        "sqllineage==1.3.6",
+        "GitPython>2",
+    },
+    "metabase": {"requests", "sqllineage==1.3.6"},
+    "mode": {"requests", "sqllineage==1.3.6", "tenacity>=8.0.1"},
+    "mongodb": {"pymongo[srv]>=3.11", "packaging"},
     "mssql": sql_common | {"sqlalchemy-pytds>=0.3"},
     "mssql-odbc": sql_common | {"pyodbc"},
     "mysql": sql_common | {"pymysql>=1.0.2"},
@@ -277,19 +291,22 @@ plugins: Dict[str, Set[str]] = {
     "presto-on-hive": sql_common
     | {"psycopg2-binary", "acryl-pyhive[hive]>=0.6.12", "pymysql>=1.0.2"},
     "pulsar": {"requests"},
-    "redash": {"redash-toolbelt", "sql-metadata", "sqllineage==1.3.5"},
+    "redash": {"redash-toolbelt", "sql-metadata", "sqllineage==1.3.6"},
     "redshift": sql_common | redshift_common,
     "redshift-usage": sql_common | usage_common | redshift_common,
     "s3": {*s3_base, *data_lake_profiling},
     "sagemaker": aws_common,
     "salesforce": {"simple-salesforce"},
-    "snowflake": snowflake_common,
-    "snowflake-usage": snowflake_common
+    "snowflake-legacy": snowflake_common,
+    "snowflake-usage-legacy": snowflake_common
     | usage_common
     | {
         "more-itertools>=8.12.0",
     },
-    "snowflake-beta": snowflake_common | usage_common,
+    "snowflake": snowflake_common | usage_common,
+    "snowflake-beta": (
+        snowflake_common | usage_common
+    ),  # deprecated, but keeping the extra for backwards compatibility
     "sqlalchemy": sql_common,
     "superset": {
         "requests",
@@ -326,11 +343,12 @@ mypy_stubs = {
     "types-cachetools",
     # versions 0.1.13 and 0.1.14 seem to have issues
     "types-click==0.1.12",
-    "boto3-stubs[s3,glue,sagemaker]",
+    "boto3-stubs[s3,glue,sagemaker,sts]",
     "types-tabulate",
     # avrogen package requires this
     "types-pytz",
     "types-pyOpenSSL",
+    "types-click-spinner",
 }
 
 base_dev_requirements = {
@@ -343,10 +361,11 @@ base_dev_requirements = {
     "flake8>=3.8.3",
     "flake8-tidy-imports>=4.3.0",
     "isort>=5.7.0",
-    "mypy>=0.950",
+    "mypy>=0.981",
     # pydantic 1.8.2 is incompatible with mypy 0.910.
     # See https://github.com/samuelcolvin/pydantic/pull/3175#issuecomment-995382910.
-    "pydantic>=1.9.0",
+    # Restricting top version to <1.10 until we can fix our types.
+    "pydantic >=1.9.0, <1.10",
     "pytest>=6.2.2",
     "pytest-asyncio>=0.16.0",
     "pytest-cov>=2.8.1",
@@ -463,6 +482,7 @@ entry_points = {
         "athena = datahub.ingestion.source.sql.athena:AthenaSource",
         "azure-ad = datahub.ingestion.source.identity.azure_ad:AzureADSource",
         "bigquery = datahub.ingestion.source.sql.bigquery:BigQuerySource",
+        "bigquery-beta = datahub.ingestion.source.bigquery_v2.bigquery:BigqueryV2Source",
         "bigquery-usage = datahub.ingestion.source.usage.bigquery_usage:BigQueryUsageSource",
         "clickhouse = datahub.ingestion.source.sql.clickhouse:ClickHouseSource",
         "clickhouse-usage = datahub.ingestion.source.usage.clickhouse_usage:ClickHouseUsageSource",
@@ -480,8 +500,8 @@ entry_points = {
         "kafka = datahub.ingestion.source.kafka:KafkaSource",
         "kafka-connect = datahub.ingestion.source.kafka_connect:KafkaConnectSource",
         "ldap = datahub.ingestion.source.ldap:LDAPSource",
-        "looker = datahub.ingestion.source.looker:LookerDashboardSource",
-        "lookml = datahub.ingestion.source.lookml:LookMLSource",
+        "looker = datahub.ingestion.source.looker.looker_source:LookerDashboardSource",
+        "lookml = datahub.ingestion.source.looker.lookml_source:LookMLSource",
         "datahub-lineage-file = datahub.ingestion.source.metadata.lineage:LineageFileSource",
         "datahub-business-glossary = datahub.ingestion.source.metadata.business_glossary:BusinessGlossaryFileSource",
         "mode = datahub.ingestion.source.mode:ModeSource",
@@ -495,9 +515,9 @@ entry_points = {
         "redash = datahub.ingestion.source.redash:RedashSource",
         "redshift = datahub.ingestion.source.sql.redshift:RedshiftSource",
         "redshift-usage = datahub.ingestion.source.usage.redshift_usage:RedshiftUsageSource",
-        "snowflake = datahub.ingestion.source.sql.snowflake:SnowflakeSource",
-        "snowflake-usage = datahub.ingestion.source.usage.snowflake_usage:SnowflakeUsageSource",
-        "snowflake-beta = datahub.ingestion.source.snowflake.snowflake_v2:SnowflakeV2Source",
+        "snowflake-legacy = datahub.ingestion.source.sql.snowflake:SnowflakeSource",
+        "snowflake-usage-legacy = datahub.ingestion.source.usage.snowflake_usage:SnowflakeUsageSource",
+        "snowflake = datahub.ingestion.source.snowflake.snowflake_v2:SnowflakeV2Source",
         "superset = datahub.ingestion.source.superset:SupersetSource",
         "tableau = datahub.ingestion.source.tableau:TableauSource",
         "openapi = datahub.ingestion.source.openapi:OpenApiSource",
@@ -522,7 +542,8 @@ entry_points = {
         "datahub = datahub.ingestion.source.state_provider.datahub_ingestion_checkpointing_provider:DatahubIngestionCheckpointingProvider",
     ],
     "datahub.ingestion.reporting_provider.plugins": [
-        "datahub = datahub.ingestion.reporting.datahub_ingestion_reporting_provider:DatahubIngestionReportingProvider",
+        "datahub = datahub.ingestion.reporting.datahub_ingestion_run_summary_provider:DatahubIngestionRunSummaryProvider",
+        "file = datahub.ingestion.reporting.file_reporter:FileReporter",
     ],
     "apache_airflow_provider": ["provider_info=datahub_provider:get_provider_info"],
 }

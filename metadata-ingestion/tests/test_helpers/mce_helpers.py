@@ -121,8 +121,8 @@ def check_golden_file(
     golden_path: Union[str, os.PathLike],
     ignore_paths: Optional[List[str]] = None,
 ) -> None:
-
     update_golden = pytestconfig.getoption("--update-golden-files")
+    copy_output = pytestconfig.getoption("--copy-output-files")
     golden_exists = os.path.isfile(golden_path)
 
     if not update_golden and not golden_exists:
@@ -146,6 +146,10 @@ def check_golden_file(
         # only update golden files if the diffs are not empty
         if update_golden:
             shutil.copyfile(str(output_path), str(golden_path))
+
+        if copy_output:
+            shutil.copyfile(str(output_path), str(golden_path) + ".output")
+            print(f"Copied output file to {golden_path}.output")
 
         # raise the error if we're just running the test
         else:

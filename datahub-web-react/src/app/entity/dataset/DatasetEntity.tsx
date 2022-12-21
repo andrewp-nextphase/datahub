@@ -1,10 +1,8 @@
 import * as React from 'react';
 import { DatabaseFilled, DatabaseOutlined } from '@ant-design/icons';
-import { Typography } from 'antd';
 import { Dataset, DatasetProperties, EntityType, OwnershipType, SearchResult } from '../../../types.generated';
 import { Entity, EntityCapabilityType, IconStyleType, PreviewType } from '../Entity';
 import { Preview } from './preview/Preview';
-import { FIELDS_TO_HIGHLIGHT } from './search/highlights';
 import { EntityProfile } from '../shared/containers/profile/EntityProfile';
 import { GetDatasetQuery, useGetDatasetQuery, useUpdateDatasetMutation } from '../../../graphql/dataset.generated';
 import { GenericEntityProperties } from '../shared/types';
@@ -28,8 +26,7 @@ import { OperationsTab } from './profile/OperationsTab';
 import { EntityMenuItems } from '../shared/EntityDropdown/EntityDropdown';
 import { SidebarSiblingsSection } from '../shared/containers/profile/sidebar/SidebarSiblingsSection';
 import { DatasetStatsSummarySubHeader } from './profile/stats/stats/DatasetStatsSummarySubHeader';
-import { TagSummary } from './shared/TagSummary';
-import { TermSummary } from './shared/TermSummary';
+import { DatasetSearchSnippet } from './DatasetSearchSnippet';
 
 const SUBTYPES = {
     VIEW: 'view',
@@ -87,7 +84,7 @@ export class DatasetEntity implements Entity<Dataset> {
             useEntityQuery={useGetDatasetQuery}
             useUpdateQuery={useUpdateDatasetMutation}
             getOverrideProperties={this.getOverridePropertiesFromEntity}
-            headerDropdownItems={new Set([EntityMenuItems.COPY_URL, EntityMenuItems.UPDATE_DEPRECATION])}
+            headerDropdownItems={new Set([EntityMenuItems.UPDATE_DEPRECATION])}
             subHeader={{
                 component: DatasetStatsSummarySubHeader,
             }}
@@ -117,15 +114,6 @@ export class DatasetEntity implements Entity<Dataset> {
                 {
                     name: 'Lineage',
                     component: LineageTab,
-                    display: {
-                        visible: (_, _1) => true,
-                        enabled: (_, dataset: GetDatasetQuery) => {
-                            return (
-                                (dataset?.dataset?.upstream?.total || 0) > 0 ||
-                                (dataset?.dataset?.downstream?.total || 0) > 0
-                            );
-                        },
-                    },
                 },
                 {
                     name: 'Queries',
@@ -248,6 +236,7 @@ export class DatasetEntity implements Entity<Dataset> {
                 glossaryTerms={data.glossaryTerms}
                 domain={data.domain?.domain}
                 container={data.container}
+                externalUrl={data.properties?.externalUrl}
             />
         );
     };
@@ -255,18 +244,6 @@ export class DatasetEntity implements Entity<Dataset> {
     renderSearch = (result: SearchResult) => {
         const data = result.entity as Dataset;
         const genericProperties = this.getGenericEntityProperties(data);
-
-        let snippet: React.ReactNode;
-
-        if (result.matchedFields.length > 0) {
-            if (result.matchedFields[0].value.includes('urn:li:tag')) {
-                snippet = <TagSummary urn={result.matchedFields[0].value} />;
-            } else if (result.matchedFields[0].value.includes('urn:li:glossaryTerm')) {
-                snippet = <TermSummary urn={result.matchedFields[0].value} />;
-            } else {
-                snippet = <b>{result.matchedFields[0].value}</b>;
-            }
-        }
 
         return (
             <Preview
@@ -289,15 +266,7 @@ export class DatasetEntity implements Entity<Dataset> {
                 subtype={data.subTypes?.typeNames?.[0]}
                 container={data.container}
                 parentContainers={data.parentContainers}
-                snippet={
-                    // Add match highlights only if all the matched fields are in the FIELDS_TO_HIGHLIGHT
-                    result.matchedFields.length > 0 &&
-                    result.matchedFields.every((field) => FIELDS_TO_HIGHLIGHT.has(field.name)) && (
-                        <Typography.Text>
-                            Matches {FIELDS_TO_HIGHLIGHT.get(result.matchedFields[0].name)} {snippet}
-                        </Typography.Text>
-                    )
-                }
+                snippet={<DatasetSearchSnippet matchedFields={result.matchedFields} />}
                 insights={result.insights}
                 externalUrl={data.properties?.externalUrl}
                 statsSummary={data.statsSummary}

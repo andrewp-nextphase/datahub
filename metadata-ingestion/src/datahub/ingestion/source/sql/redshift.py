@@ -141,7 +141,7 @@ class RedshiftConfig(
     scheme = Field(
         default="redshift+psycopg2",
         description="",
-        exclude=True,
+        hidden_from_schema=True,
     )
 
     default_schema: str = Field(
@@ -427,7 +427,7 @@ class RedshiftReport(SQLSourceReport):
 @capability(SourceCapability.LINEAGE_COARSE, "Optionally enabled via configuration")
 @capability(
     SourceCapability.USAGE_STATS,
-    "Not provided by this module, use `bigquery-usage` for that.",
+    "Not provided by this module, use `redshift-usage` for that.",
     supported=False,
 )
 @capability(SourceCapability.DELETION_DETECTION, "Enabled via stateful ingestion")
@@ -691,7 +691,7 @@ class RedshiftSource(SQLAlchemySource):
 
         return sources
 
-    def get_db_name(self, inspector: Inspector = None) -> str:
+    def get_db_name(self, inspector: Optional[Inspector] = None) -> str:
         db_name = getattr(self.config, "database")
         db_alias = getattr(self.config, "database_alias")
         if db_alias:
@@ -733,7 +733,6 @@ class RedshiftSource(SQLAlchemySource):
 
         try:
             for db_row in engine.execute(query):
-
                 if not self.config.schema_pattern.allowed(
                     db_row["target_schema"]
                 ) or not self.config.table_pattern.allowed(db_row["target_table"]):
@@ -809,7 +808,6 @@ class RedshiftSource(SQLAlchemySource):
 
                 # Merging downstreams if dataset already exists and has downstreams
                 if target.dataset.path in self._lineage_map:
-
                     self._lineage_map[
                         target.dataset.path
                     ].upstreams = self._lineage_map[
@@ -829,7 +827,6 @@ class RedshiftSource(SQLAlchemySource):
             self.warn(logger, f"extract-{lineage_type.name}", f"Error was {e}")
 
     def _populate_lineage(self) -> None:
-
         stl_scan_based_lineage_query: str = """
             select
                 distinct cluster,

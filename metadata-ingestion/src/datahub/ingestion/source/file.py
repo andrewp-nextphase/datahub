@@ -45,7 +45,7 @@ class FileReadMode(ConfigEnum):
 
 class FileSourceConfig(ConfigModel):
     filename: Optional[str] = Field(
-        None, description="[deprecated in favor or `path`] The file to ingest."
+        None, description="[deprecated in favor of `path`] The file to ingest."
     )
     path: pathlib.Path = Field(
         description="Path to folder or file to ingest. If pointed to a folder, all files with extension {file_extension} (default json) within that folder will be processed."
@@ -58,6 +58,10 @@ class FileSourceConfig(ConfigModel):
     aspect: Optional[str] = Field(
         default=None,
         description="Set to an aspect to only read this aspect for ingestion.",
+    )
+    count_all_before_starting: bool = Field(
+        default=True,
+        description="When enabled, counts total number of records in the file before starting. Used for accurate estimation of completion time. Turn it off if startup time is too high.",
     )
 
     _minsize_for_streaming_mode_in_bytes: int = (
@@ -219,6 +223,7 @@ class GenericFileSource(TestableSource):
     def close(self):
         if self.fp:
             self.fp.close()
+        super().close()
 
     def _iterate_file(self, path: str) -> Iterable[Tuple[int, Any]]:
         self.report.current_file_name = path
@@ -251,14 +256,15 @@ class GenericFileSource(TestableSource):
                 self.report.current_file_elements_read += 1
         else:
             self.fp = open(path, "rb")
-            count_start_time = datetime.datetime.now()
-            parse_stream = ijson.parse(self.fp, use_float=True)
-            total_elements = 0
-            for row in ijson.items(parse_stream, "item", use_float=True):
-                total_elements += 1
-            count_end_time = datetime.datetime.now()
-            self.report.add_count_time(count_end_time - count_start_time)
-            self.report.current_file_num_elements = total_elements
+            if self.config.count_all_before_starting:
+                count_start_time = datetime.datetime.now()
+                parse_stream = ijson.parse(self.fp, use_float=True)
+                total_elements = 0
+                for row in ijson.items(parse_stream, "item", use_float=True):
+                    total_elements += 1
+                count_end_time = datetime.datetime.now()
+                self.report.add_count_time(count_end_time - count_start_time)
+                self.report.current_file_num_elements = total_elements
             self.report.current_file_elements_read = 0
             self.fp.seek(0)
             parse_start_time = datetime.datetime.now()

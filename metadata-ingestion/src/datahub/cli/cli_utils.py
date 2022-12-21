@@ -53,6 +53,16 @@ class DatahubConfig(BaseModel):
     gms: GmsConfig
 
 
+def get_boolean_env_variable(key: str, default: bool = False) -> bool:
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    elif value.lower() in ("true", "1"):
+        return True
+    else:
+        return False
+
+
 def set_env_variables_override_config(url: str, token: Optional[str]) -> None:
     """Should be used to override the config when using rest emitter"""
     config_override[ENV_METADATA_HOST_URL] = url
@@ -73,7 +83,7 @@ def write_datahub_config(host: str, token: Optional[str]) -> None:
 
 
 def should_skip_config() -> bool:
-    return os.getenv(ENV_SKIP_CONFIG, False) == "True"
+    return get_boolean_env_variable(ENV_SKIP_CONFIG, False)
 
 
 def ensure_datahub_config() -> None:
@@ -555,6 +565,7 @@ def post_entity(
     aspect_name: str,
     aspect_value: Dict,
     cached_session_host: Optional[Tuple[Session, str]] = None,
+    is_async: Optional[str] = "false",
 ) -> int:
     session, gms_host = cached_session_host or get_session_and_host()
     endpoint: str = "/aspects/?action=ingestProposal"
@@ -569,7 +580,8 @@ def post_entity(
                 "contentType": "application/json",
                 "value": json.dumps(aspect_value),
             },
-        }
+        },
+        "async": is_async,
     }
     payload = json.dumps(proposal)
     url = gms_host + endpoint
@@ -579,6 +591,11 @@ def post_entity(
         curl_command,
     )
     response = session.post(url, payload)
+    if not response.ok:
+        try:
+            log.info(response.json()["message"].strip())
+        except Exception:
+            log.info(f"post_entity failed: {response.text}")
     response.raise_for_status()
     return response.status_code
 

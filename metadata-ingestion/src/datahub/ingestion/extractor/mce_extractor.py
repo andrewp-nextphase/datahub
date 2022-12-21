@@ -3,7 +3,7 @@ from typing import Iterable, Union
 from datahub.configuration.common import ConfigModel
 from datahub.emitter.mce_builder import get_sys_time
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
-from datahub.ingestion.api import RecordEnvelope
+from datahub.ingestion.api.common import RecordEnvelope
 from datahub.ingestion.api.source import Extractor, WorkUnit
 from datahub.ingestion.api.workunit import MetadataWorkUnit, UsageStatsWorkUnit
 from datahub.metadata.com.linkedin.pegasus2avro.mxe import (
@@ -67,7 +67,6 @@ class WorkUnitRecordExtractor(
                 ):
                     raise AttributeError("every mce must have at least one aspect")
             if not workunit.metadata.validate():
-
                 invalid_mce = str(workunit.metadata)
 
                 if black is not None:
@@ -85,7 +84,6 @@ class WorkUnitRecordExtractor(
             )
         elif isinstance(workunit, UsageStatsWorkUnit):
             if not workunit.usageStats.validate():
-
                 invalid_usage_stats = str(workunit.usageStats)
 
                 if black is not None:

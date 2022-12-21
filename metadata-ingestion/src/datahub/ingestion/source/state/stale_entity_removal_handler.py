@@ -5,9 +5,8 @@ from typing import Dict, Generic, Iterable, List, Optional, Tuple, Type, TypeVar
 
 import pydantic
 
-from datahub.configuration.common import ConfigModel
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
-from datahub.ingestion.api.ingestion_job_state_provider import JobId
+from datahub.ingestion.api.ingestion_job_checkpointing_provider_base import JobId
 from datahub.ingestion.api.workunit import MetadataWorkUnit
 from datahub.ingestion.source.state.checkpoint import Checkpoint, CheckpointStateBase
 from datahub.ingestion.source.state.stateful_ingestion_base import (
@@ -19,7 +18,7 @@ from datahub.ingestion.source.state.stateful_ingestion_base import (
 from datahub.ingestion.source.state.use_case_handler import (
     StatefulIngestionUsecaseHandlerBase,
 )
-from datahub.metadata.schema_classes import ChangeTypeClass, StatusClass
+from datahub.metadata.schema_classes import StatusClass
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -29,16 +28,16 @@ class StatefulStaleMetadataRemovalConfig(StatefulIngestionConfig):
     Base specialized config for Stateful Ingestion with stale metadata removal capability.
     """
 
-    _entity_types: List[str] = []
     remove_stale_metadata: bool = pydantic.Field(
         default=True,
-        description=f"Soft-deletes the entities of type {', '.join(_entity_types)} in the last successful run but missing in the current run with stateful_ingestion enabled.",
+        description="Soft-deletes the entities present in the last successful run but missing in the current run with stateful_ingestion enabled.",
     )
     fail_safe_threshold: float = pydantic.Field(
-        default=95.0,
+        default=100.0,
         description="Prevents large amount of soft deletes & the state from committing from accidental changes to the source configuration if the relative change percent in entities compared to the previous state is above the 'fail_safe_threshold'.",
-        le=100.0,  # mypy does not work with pydantic.confloat. This is the recommended work-around.
+        le=100.0,
         ge=0.0,
+        hidden_from_schema=True,
     )
 
 
@@ -94,7 +93,7 @@ class StaleEntityCheckpointStateBase(CheckpointStateBase, ABC, Generic[Derived])
         """
         Returns the percentage of entities that have changed relative to `old_checkpoint_state`.
         :param old_checkpoint_state: the old checkpoint state to compute the relative change percent against.
-        :return: (|intersection(self, old_checkpoint_state)| * 100.0 / |old_checkpoint_state|)
+        :return: (1-|intersection(self, old_checkpoint_state)| / |old_checkpoint_state|) * 100.0
         """
         pass
 
@@ -115,7 +114,7 @@ class StaleEntityCheckpointStateBase(CheckpointStateBase, ABC, Generic[Derived])
             overlap_count_all += overlap_count
             old_count_all += old_count
         if old_count_all:
-            return overlap_count * 100.0 / old_count_all
+            return (1 - overlap_count_all / old_count_all) * 100.0
         return 0.0
 
     @staticmethod
@@ -140,21 +139,18 @@ class StaleEntityRemovalHandler(
     def __init__(
         self,
         source: StatefulIngestionSourceBase,
-        config: Optional[StatefulIngestionConfigBase],
+        config: StatefulIngestionConfigBase[StatefulStaleMetadataRemovalConfig],
         state_type_class: Type[StaleEntityCheckpointStateBase],
         pipeline_name: Optional[str],
         run_id: str,
     ):
-        self.config = config
         self.source = source
         self.state_type_class = state_type_class
         self.pipeline_name = pipeline_name
         self.run_id = run_id
-        self.stateful_ingestion_config = (
-            cast(StatefulStaleMetadataRemovalConfig, self.config.stateful_ingestion)
-            if self.config
-            else None
-        )
+        self.stateful_ingestion_config: Optional[
+            StatefulStaleMetadataRemovalConfig
+        ] = config.stateful_ingestion
         self.checkpointing_enabled: bool = (
             True
             if (
@@ -167,7 +163,8 @@ class StaleEntityRemovalHandler(
         self._job_id = self._init_job_id()
         self.source.register_stateful_ingestion_usecase_handler(self)
 
-    def _init_job_id(self) -> JobId:
+    @classmethod
+    def compute_job_id(cls, platform: Optional[str]) -> JobId:
         # Handle backward-compatibility for existing sources.
         backward_comp_platform_to_job_name: Dict[str, str] = {
             "bigquery": "ingest_from_bigquery_source",
@@ -177,13 +174,16 @@ class StaleEntityRemovalHandler(
             "pulsar": "ingest_from_pulsar_source",
             "snowflake": "common_ingest_from_sql_source",
         }
-        platform: Optional[str] = getattr(self.source, "platform")
         if platform in backward_comp_platform_to_job_name:
             return JobId(backward_comp_platform_to_job_name[platform])
 
         # Default name for everything else
         job_name_suffix = "stale_entity_removal"
         return JobId(f"{platform}_{job_name_suffix}" if platform else job_name_suffix)
+
+    def _init_job_id(self) -> JobId:
+        platform: Optional[str] = getattr(self.source, "platform")
+        return self.compute_job_id(platform)
 
     def _ignore_old_state(self) -> bool:
         if (
@@ -215,27 +215,18 @@ class StaleEntityRemovalHandler(
             return Checkpoint(
                 job_name=self.job_id,
                 pipeline_name=self.pipeline_name,
-                platform_instance_id=self.source.get_platform_instance_id(),
                 run_id=self.run_id,
-                config=cast(ConfigModel, self.config),
                 state=self.state_type_class(),
             )
         return None
 
     def _create_soft_delete_workunit(self, urn: str, type: str) -> MetadataWorkUnit:
-        entity_type = type
-        if entity_type in ["view", "table", "topic"]:
-            entity_type = "dataset"
-
-        logger.info(f"Soft-deleting stale entity of type {type} - {urn}.")
+        logger.info(f"Soft-deleting stale entity - {urn}")
         mcp = MetadataChangeProposalWrapper(
-            entityType=entity_type,
             entityUrn=urn,
-            changeType=ChangeTypeClass.UPSERT,
-            aspectName="status",
             aspect=StatusClass(removed=True),
         )
-        wu = MetadataWorkUnit(id=f"soft-delete-{type}-{urn}", mcp=mcp)
+        wu = MetadataWorkUnit(id=f"soft-delete-{urn}", mcp=mcp)
         report = self.source.get_report()
         assert isinstance(report, StaleEntityRemovalSourceReport)
         report.report_workunit(wu)
@@ -269,12 +260,16 @@ class StaleEntityRemovalHandler(
         if (
             entity_difference_percent
             > self.stateful_ingestion_config.fail_safe_threshold
+            # Adding this check to protect against cases where get_percent_entities_changed returns over 100%.
+            # This previously happened due to a bug in the implementation, which caused this condition to be
+            # triggered too frequently.
+            and self.stateful_ingestion_config.fail_safe_threshold < 100.0
         ):
             # Log the failure. This would prevent the current state from getting committed.
             self.source.get_report().report_failure(
                 "Stateful Ingestion",
-                f"Fail safe mode triggered, entity difference percent:{entity_difference_percent}"
-                " > fail_safe_threshold:{self.stateful_ingestion_config.fail_safe_threshold}",
+                f"Will not soft-delete entities, since we'd be deleting {entity_difference_percent:.1f}% of the existing entities. "
+                f"To force a deletion, increase the value of 'stateful_ingestion.fail_safe_threshold' (currently {self.stateful_ingestion_config.fail_safe_threshold})",
             )
             # Bail so that we don't emit the stale entity removal workunits.
             return

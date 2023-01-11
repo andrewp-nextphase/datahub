@@ -6,7 +6,8 @@ import re
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-
+import pikepdf	
+import pandas
 import pydeequ
 from pydeequ.analyzers import AnalyzerContext
 from pyspark.conf import SparkConf
@@ -62,7 +63,7 @@ from datahub.ingestion.source.s3.config import DataLakeSourceConfig, PathSpec
 from datahub.ingestion.source.s3.data_lake_utils import ContainerWUCreator
 from datahub.ingestion.source.s3.profiling import _SingleTableProfiler
 from datahub.ingestion.source.s3.report import DataLakeSourceReport
-from datahub.ingestion.source.schema_inference import avro, csv_tsv, json, parquet
+from datahub.ingestion.source.schema_inference import avro, csv_tsv, json, parquet, sas
 from datahub.metadata.com.linkedin.pegasus2avro.common import Status
 from datahub.metadata.com.linkedin.pegasus2avro.metadata.snapshot import DatasetSnapshot
 from datahub.metadata.com.linkedin.pegasus2avro.mxe import MetadataChangeEvent
@@ -358,7 +359,9 @@ class S3Source(Source):
                     "To ingest avro files, please install the spark-avro package: https://mvnrepository.com/artifact/org.apache.spark/spark-avro_2.12/3.0.3",
                 )
                 return None
-
+        elif ext.endswith(".xpt") or ext.endswith(".sas7bdat"):	
+            pandas_df = pandas.read_sas(file, encoding='utf-8')	
+            df = self.spark.createDataFrame(pandas_df) 
         # TODO: add support for more file types
         # elif file.endswith(".orc"):
         # df = self.spark.read.orc(file)
@@ -540,8 +543,32 @@ class S3Source(Source):
                 "number_of_files": str(table_data.number_of_files),
                 "size_in_bytes": str(table_data.size_in_bytes),
             }
+        extension = pathlib.Path(table_data.full_path).suffix
+        if extension == '.pdf':
+                if table_data.is_s3:
+                        if self.source_config.aws_config is None:
+                                raise ValueError("AWS config is required for S3 file sources")
+
+                        s3_client = self.source_config.aws_config.get_s3_client()
+                        pdffile = smart_open(
+                        table_data.full_path, "rb", transport_params={"client": s3_client}
+                        )
+                else:
+                        pdffile = open(table_data.full_path, "rb")
+                pdf = pikepdf.Pdf.open(pdffile)
+                docinfo = dict(pdf.docinfo)
+                docinfo = {str(i).strip('/'): str(j) for i, j in docinfo.items()}
+                print(type(docinfo))
+                for key,value in docinfo.items():
+                        print(key,value)
+        if not path_spec.sample_files:
+            customProperties = {
+                "number_of_files": str(table_data.number_of_files),
+                "size_in_bytes": str(table_data.size_in_bytes),
+            }
             if table_data.is_s3:
                 customProperties["table_path"] = str(table_data.table_path)
+        customProperties.update(docinfo)
 
         dataset_properties = DatasetPropertiesClass(
             description="",

@@ -16,7 +16,7 @@ from datahub.ingestion.source.aws.s3_util import is_s3_uri
 logging.getLogger("py4j").setLevel(logging.ERROR)
 logger: logging.Logger = logging.getLogger(__name__)
 
-SUPPORTED_FILE_TYPES: List[str] = ["csv", "tsv", "json", "parquet", "avro", "pdf"]
+SUPPORTED_FILE_TYPES: List[str] = ["csv", "tsv", "json", "parquet", "avro", "pdf", "sas7bdat", "xpt"]
 SUPPORTED_COMPRESSIONS: List[str] = ["gz", "bz2"]
 
 

@@ -415,6 +415,10 @@ class S3Source(Source):
                 fields = json.JsonInferrer().infer_schema(file)
             elif extension == ".avro":
                 fields = avro.AvroInferrer().infer_schema(file)
+            elif extension == ".xpt":
+                fields = sas.XportInferrer().infer_schema(file)
+            elif extension == ".sas7bdat":
+                fields = sas.Sas7bdatInferrer().infer_schema(file)
             else:
                 self.report.report_warning(
                     table_data.full_path,

@@ -416,9 +416,13 @@ class S3Source(Source):
             elif extension == ".avro":
                 fields = avro.AvroInferrer().infer_schema(file)
             elif extension == ".xpt":
-                fields = sas.XportInferrer().infer_schema(file)
+                fields = sas.XportInferrer(
+                    max_rows=self.source_config.max_rows
+                ).infer_schema(file)
             elif extension == ".sas7bdat":
-                fields = sas.Sas7bdatInferrer().infer_schema(file)
+                fields = sas.Sas7bdatInferrer(
+                    max_rows=self.source_config.max_rows
+                ).infer_schema(file)
             else:
                 self.report.report_warning(
                     table_data.full_path,
@@ -565,6 +569,7 @@ class S3Source(Source):
                 print(type(docinfo))
                 for key,value in docinfo.items():
                         print(key,value)
+                customProperties.update(docinfo)
         if not path_spec.sample_files:
             customProperties = {
                 "number_of_files": str(table_data.number_of_files),
@@ -572,7 +577,7 @@ class S3Source(Source):
             }
             if table_data.is_s3:
                 customProperties["table_path"] = str(table_data.table_path)
-        customProperties.update(docinfo)
+
 
         dataset_properties = DatasetPropertiesClass(
             description="",

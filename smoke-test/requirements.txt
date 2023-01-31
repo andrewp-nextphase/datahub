@@ -7,3 +7,5 @@ slack-sdk==3.18.1
 aiohttp
 pyreadstat
 pikepdf
+joblib
+
